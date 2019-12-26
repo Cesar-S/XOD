@@ -1,0 +1,43 @@
+{
+  "nodes": [
+    {
+      "id": "BJ6r8LeoB",
+      "label": "DEV",
+      "position": {
+        "units": "slots",
+        "x": 2,
+        "y": 1
+      },
+      "type": "@/input-ssd1306"
+    },
+    {
+      "id": "S1J8LUlsr",
+      "label": "DEV'",
+      "position": {
+        "units": "slots",
+        "x": 2,
+        "y": 3
+      },
+      "type": "@/output-ssd1306"
+    },
+    {
+      "id": "Sk7LUIlor",
+      "position": {
+        "units": "slots",
+        "x": 2,
+        "y": 2
+      },
+      "type": "xod/patch-nodes/not-implemented-in-xod"
+    },
+    {
+      "id": "ryq-crHTH",
+      "label": "BMP",
+      "position": {
+        "units": "slots",
+        "x": 4,
+        "y": 1
+      },
+      "type": "xod/graphics/input-bmp"
+    }
+  ]
+}
