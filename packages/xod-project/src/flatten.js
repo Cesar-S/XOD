@@ -8,6 +8,7 @@ import {
   fail,
   failOnNothing,
   prependTraceToError,
+  foldMaybe,
 } from 'xod-func-tools';
 
 import * as CONST from './constants';
@@ -233,7 +234,7 @@ const createCastNode = R.curry((patchTuples, nodes, link) =>
           R.pipe(R.pair, R.any(isGenericType))
         ),
         Maybe.Nothing,
-        R.compose(Maybe.of, PatchPathUtils.getCastPatchPath)
+        PatchPathUtils.getCastPatchPath
       ),
       [
         getPinType(
@@ -253,6 +254,19 @@ const createCastNode = R.curry((patchTuples, nodes, link) =>
   )(link)
 );
 
+// :: Project -> Node -> { input: Pin, output: Pin }
+const getCastNodePinKeys = R.curry((project, castNode) =>
+  R.compose(
+    R.map(
+      R.applySpec({
+        input: R.compose(Pin.getPinKey, R.head, Patch.listInputPins),
+        output: R.compose(Pin.getPinKey, R.head, Patch.listOutputPins),
+      })
+    ),
+    Project.getPatchByNode
+  )(castNode, project)
+);
+
 /**
  * It replaces link with casting nodes and
  * new links, if needed. Otherwise it returns
@@ -262,46 +276,45 @@ const createCastNode = R.curry((patchTuples, nodes, link) =>
  *
  * @private
  * @function splitLinkWithCastNode
+ * @param {Project} project
  * @param {Array<Array<Path, Patch>>} patchTuples
  * @param {Array<Node>} nodes
  * @param {Link} link
  * @returns {Array<Node|Null, Array<Link>>}
  */
-const splitLinkWithCastNode = R.curry((patchTuples, nodes, link) =>
-  Maybe.maybe(
-    [null, [link]],
-    castNode => {
-      const origLinkId = Link.getLinkId(link);
-      const fromNodeId = Link.getLinkOutputNodeId(link);
-      const fromPinKey = Link.getLinkOutputPinKey(link);
-      const toNodeId = Link.getLinkInputNodeId(link);
-      const toPinKey = Link.getLinkInputPinKey(link);
+const splitLinkWithCastNode = R.curry((project, patchTuples, nodes, link) =>
+  R.compose(
+    foldMaybe(
+      [null, [link]], // fallback
+      ([castNode, pinKeys]) => {
+        const origLinkId = Link.getLinkId(link);
+        const fromNodeId = Link.getLinkOutputNodeId(link);
+        const fromPinKey = Link.getLinkOutputPinKey(link);
+        const toNodeId = Link.getLinkInputNodeId(link);
+        const toPinKey = Link.getLinkInputPinKey(link);
 
-      const toCastNode = R.assoc(
-        'id',
-        `${origLinkId}-to-cast`,
-        Link.createLink(
-          CONST.TERMINAL_PIN_KEYS[CONST.PIN_DIRECTION.INPUT],
-          castNode.id,
-          fromPinKey,
-          fromNodeId
-        )
-      );
-      const fromCastNode = R.assoc(
-        'id',
-        `${origLinkId}-from-cast`,
-        Link.createLink(
-          toPinKey,
-          toNodeId,
-          CONST.TERMINAL_PIN_KEYS[CONST.PIN_DIRECTION.OUTPUT],
-          castNode.id
-        )
-      );
+        const toCastNode = R.assoc(
+          'id',
+          `${origLinkId}-to-cast`,
+          Link.createLink(pinKeys.input, castNode.id, fromPinKey, fromNodeId)
+        );
+        const fromCastNode = R.assoc(
+          'id',
+          `${origLinkId}-from-cast`,
+          Link.createLink(toPinKey, toNodeId, pinKeys.output, castNode.id)
+        );
 
-      return [castNode, [toCastNode, fromCastNode]];
-    },
-    createCastNode(patchTuples, nodes, link)
-  )
+        return [castNode, [toCastNode, fromCastNode]];
+      }
+    ),
+    R.chain(castNode =>
+      R.compose(R.map(pins => [castNode, pins]), getCastNodePinKeys)(
+        project,
+        castNode
+      )
+    ),
+    createCastNode
+  )(patchTuples, nodes, link)
 );
 
 // :: [{ nodeId, pinKey, value }] -> StrMap Node -> StrMap Node
@@ -602,20 +615,21 @@ const removeTerminalsAndPassPins = ([nodes, links]) => {
  *
  * @private
  * @function createCastNodes
+ * @param {Project} project
  * @param {Array<Array<Path, Patch>>} patchTuples
  * @param {Array<Node>} nodes
  * @param {Array<Link>} links
  * @returns {Array<Array<Node>, Array<Link>>}
  */
-// :: [[Path, Patch]] -> Node[] -> Link[] -> [ Node[], Link[] ]
-const createCastNodes = R.curry((patchTuples, nodes, links) =>
+// :: Project -> [[Path, Patch]] -> Node[] -> Link[] -> [ Node[], Link[] ]
+const createCastNodes = R.curry((project, patchTuples, nodes, links) =>
   R.compose(
     removeTerminalsAndPassPins,
     R.converge((newNodes, newLinks) => [newNodes, newLinks], [
       R.compose(R.concat(nodes), R.reject(R.isNil), R.pluck(0)),
       R.compose(R.flatten, R.pluck(1)),
     ]),
-    R.map(splitLinkWithCastNode(patchTuples, nodes))
+    R.map(splitLinkWithCastNode(project, patchTuples, nodes))
   )(links)
 );
 
@@ -806,7 +820,12 @@ const convertPatch = def(
       );
       const nodes = R.map(R.unnest, flattenEntities[0]);
       const links = R.map(R.unnest, flattenEntities[1]);
-      const [newNodes, newLinks] = createCastNodes(leafPatches, nodes, links);
+      const [newNodes, newLinks] = createCastNodes(
+        project,
+        leafPatches,
+        nodes,
+        links
+      );
 
       return R.compose(
         Patch.upsertLinks(newLinks),

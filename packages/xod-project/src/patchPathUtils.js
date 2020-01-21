@@ -1,5 +1,5 @@
 import * as R from 'ramda';
-import { failOnFalse } from 'xod-func-tools';
+import { failOnFalse, maybePath } from 'xod-func-tools';
 
 import { def } from './types';
 import * as CONST from './constants';
@@ -113,6 +113,7 @@ export const convertToLocalPath = R.compose(getLocalPath, getBaseName);
 
 const PATCH_NODES_LIB_NAME = 'xod/patch-nodes';
 const dataTypes = R.values(CONST.PIN_TYPE);
+
 // :: Map BaseName PatchPath
 const bindableCustomTypesMap = R.compose(
   R.mergeAll,
@@ -216,10 +217,10 @@ export const isCastPatchPath = R.test(castTypeRegExp);
  * @function getCastPatchPath
  * @param {PIN_TYPE} typeIn
  * @param {PIN_TYPE} typeOut
- * @returns {String}
+ * @returns {Maybe<PatchPath>}
  */
 export const getCastPatchPath = (typeIn, typeOut) =>
-  `xod/core/cast-to-${typeOut}(${typeIn})`;
+  maybePath([typeIn, typeOut], CONST.CAST_NODES);
 
 //
 // defer-* nodes
